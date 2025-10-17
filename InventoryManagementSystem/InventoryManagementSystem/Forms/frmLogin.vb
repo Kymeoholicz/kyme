@@ -108,35 +108,6 @@ Public Class frmLogin
                 Application.Exit()
             End If
         End If
-        Try
-            Using con As New OleDbConnection(ConnectionString)
-                con.Open()
-
-                Dim query As String = "SELECT * FROM tblUsers WHERE Username=@Username AND UserPassword=@UserPassword AND IsActive=True"
-                Using cmd As New OleDbCommand(query, con)
-                    cmd.Parameters.AddWithValue("@Username", txtUsername.Text.Trim())
-                    cmd.Parameters.AddWithValue("@UserPassword", txtPassword.Text.Trim())
-
-                    Using dr As OleDbDataReader = cmd.ExecuteReader()
-                        If dr.HasRows Then
-                            dr.Read()
-                            Dim userRole As String = dr("UserRole").ToString()
-                            MessageBox.Show("Login successful! Welcome, " & dr("FullName").ToString(), "Success", MessageBoxButtons.OK, MessageBoxIcon.Information)
-
-                            ' Open main form or menu here
-                            frmMainMenu.Show()
-                            Me.Hide()
-                        Else
-                            MessageBox.Show("Invalid username or password.", "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                        End If
-                    End Using
-                End Using
-            End Using
-
-        Catch ex As Exception
-            MessageBox.Show("Login error: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
-        End Try
-
     End Sub
 
     Private Function AuthenticateUser(username As String, password As String) As Boolean
@@ -144,26 +115,27 @@ Public Class frmLogin
             If con.State = ConnectionState.Open Then con.Close()
             con.Open()
 
-            ' ✅ Hash the password before checking
+            ' Hash the input password before comparing
             Dim hashedPassword As String = HashPassword(password)
 
-            Dim query As String = "SELECT UserID, Username, FullName, UserRole, IsActive " &
-                              "FROM tblUsers WHERE Username = ? AND UserPassword = ?"
+            ' ✅ Corrected SQL to match actual Access field names
+            cmd = New OleDbCommand("
+            SELECT UserID, Username, FullName, UserRole, IsActive 
+            FROM tblUsers 
+            WHERE Username = ? AND UserPassword = ?", con)
 
-            cmd = New OleDbCommand(query, con)
-            cmd.Parameters.AddWithValue("@Username", username)
-            cmd.Parameters.AddWithValue("@UserPassword", hashedPassword)
+            cmd.Parameters.AddWithValue("@1", username)
+            cmd.Parameters.AddWithValue("@2", hashedPassword)
 
             dr = cmd.ExecuteReader()
 
             If dr.Read() Then
-                ' ✅ Check if active
                 If Not CBool(dr("IsActive")) Then
                     MessageBox.Show("Your account has been deactivated.", "Account Inactive", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                     Return False
                 End If
 
-                ' ✅ Store current user details
+                ' ✅ Assign user details to CurrentUser object
                 CurrentUser.UserID = CInt(dr("UserID"))
                 CurrentUser.Username = dr("Username").ToString()
                 CurrentUser.FullName = dr("FullName").ToString()
@@ -183,7 +155,6 @@ Public Class frmLogin
             If con.State = ConnectionState.Open Then con.Close()
         End Try
     End Function
-
 
 
     Private Function HashPassword(password As String) As String
@@ -214,7 +185,9 @@ Public Class frmLogin
     End Sub
 
     Private Sub btnCancel_Click(sender As Object, e As EventArgs) Handles btnCancel.Click
-        Application.Exit()
+        If MessageBox.Show("Are you sure you want to exit?", "Exit", MessageBoxButtons.YesNo, MessageBoxIcon.Question) = DialogResult.Yes Then
+            Application.Exit()
+        End If
     End Sub
 
     Private Sub chkShowPassword_CheckedChanged(sender As Object, e As EventArgs) Handles chkShowPassword.CheckedChanged
@@ -235,5 +208,7 @@ Public Class frmLogin
         MessageBox.Show("Please contact your system administrator to reset your password.", "Password Recovery", MessageBoxButtons.OK, MessageBoxIcon.Information)
     End Sub
 
-
+    Private Sub btnDatabaseInfo_Click(sender As Object, e As EventArgs) Handles btnDatabaseInfo.Click
+        DatabaseConfig.ShowDatabaseInfo()
+    End Sub
 End Class

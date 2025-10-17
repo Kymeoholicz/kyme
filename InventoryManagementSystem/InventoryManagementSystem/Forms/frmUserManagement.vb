@@ -29,6 +29,9 @@ Public Class frmUserManagement
         Me.WindowState = FormWindowState.Maximized
     End Sub
 
+    '==========================
+    ' LOAD & INITIALIZATION
+    '==========================
     Private Sub LoadRoles()
         cmbUserRole.Items.Clear()
         cmbUserRole.Items.Add("Admin")
@@ -69,6 +72,9 @@ Public Class frmUserManagement
         End Try
     End Sub
 
+    '==========================
+    ' CLEAR FIELDS
+    '==========================
     Private Sub ClearFields()
         txtUsername.Clear()
         txtFullName.Clear()
@@ -89,7 +95,188 @@ Public Class frmUserManagement
         lblPasswordNote.ForeColor = Color.Gray
     End Sub
 
-    ' Log activity inside frmUserManagement
+    '==========================
+    ' PASSWORD HASHING
+    '==========================
+    Private Function HashPassword(password As String) As String
+        Using sha As SHA256 = SHA256.Create()
+            Dim bytes = Encoding.UTF8.GetBytes(password)
+            Dim hash = sha.ComputeHash(bytes)
+            Return BitConverter.ToString(hash).Replace("-", "").ToLower()
+        End Using
+    End Function
+
+    '==========================
+    ' ADD USER
+    '==========================
+    Private Sub btnAdd_Click(sender As Object, e As EventArgs) Handles btnAdd.Click
+        If txtUsername.Text.Trim() = "" OrElse txtFullName.Text.Trim() = "" OrElse txtPassword.Text.Trim() = "" Then
+            MessageBox.Show("Please fill in all required fields.", "Missing Information", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End If
+
+        If txtPassword.Text <> txtConfirmPassword.Text Then
+            MessageBox.Show("Passwords do not match.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End If
+
+        If txtPassword.TextLength < 6 Then
+            MessageBox.Show("Password must be at least 6 characters long.", "Invalid Password", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End If
+
+        Try
+            If con.State = ConnectionState.Open Then con.Close()
+            con.Open()
+
+            ' Check if username exists
+            cmd = New OleDbCommand("SELECT COUNT(*) FROM tblUsers WHERE Username = ?", con)
+            cmd.Parameters.AddWithValue("@1", txtUsername.Text.Trim())
+            Dim count As Integer = Convert.ToInt32(cmd.ExecuteScalar())
+            If count > 0 Then
+                MessageBox.Show("Username already exists.", "Duplicate", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            ' Insert new user
+            cmd = New OleDbCommand("INSERT INTO tblUsers (Username, FullName, Email, Password, UserRole, IsActive, DateCreated) VALUES (?,?,?,?,?,?,?)", con)
+            cmd.Parameters.AddWithValue("@1", txtUsername.Text.Trim())
+            cmd.Parameters.AddWithValue("@2", txtFullName.Text.Trim())
+            cmd.Parameters.AddWithValue("@3", txtEmail.Text.Trim())
+            cmd.Parameters.AddWithValue("@4", HashPassword(txtPassword.Text.Trim()))
+            cmd.Parameters.AddWithValue("@5", cmbUserRole.Text)
+            cmd.Parameters.AddWithValue("@6", chkIsActive.Checked)
+            cmd.Parameters.AddWithValue("@7", Date.Now)
+            cmd.ExecuteNonQuery()
+
+            LogActivity("Add User", "Added user: " & txtUsername.Text)
+            MessageBox.Show("User added successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information)
+
+            LoadData()
+            ClearFields()
+        Catch ex As Exception
+            MessageBox.Show("Error adding user: " & ex.Message)
+        Finally
+            If con.State = ConnectionState.Open Then con.Close()
+        End Try
+    End Sub
+
+    '==========================
+    ' UPDATE USER
+    '==========================
+    Private Sub btnUpdate_Click(sender As Object, e As EventArgs) Handles btnUpdate.Click
+        If selectedUserID = 0 Then
+            MessageBox.Show("Select a user to update.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End If
+
+        Try
+            If con.State = ConnectionState.Open Then con.Close()
+            con.Open()
+            cmd = New OleDbCommand("UPDATE tblUsers SET FullName=?, Email=?, UserRole=?, IsActive=? WHERE UserID=?", con)
+            cmd.Parameters.AddWithValue("@1", txtFullName.Text.Trim())
+            cmd.Parameters.AddWithValue("@2", txtEmail.Text.Trim())
+            cmd.Parameters.AddWithValue("@3", cmbUserRole.Text)
+            cmd.Parameters.AddWithValue("@4", chkIsActive.Checked)
+            cmd.Parameters.AddWithValue("@5", selectedUserID)
+            cmd.ExecuteNonQuery()
+
+            LogActivity("Update User", "Updated user: " & txtUsername.Text)
+            MessageBox.Show("User updated successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information)
+
+            LoadData()
+            ClearFields()
+        Catch ex As Exception
+            MessageBox.Show("Error updating user: " & ex.Message)
+        Finally
+            If con.State = ConnectionState.Open Then con.Close()
+        End Try
+    End Sub
+
+    '==========================
+    ' DELETE USER
+    '==========================
+    Private Sub btnDelete_Click(sender As Object, e As EventArgs) Handles btnDelete.Click
+        If selectedUserID = 0 Then
+            MessageBox.Show("Select a user to delete.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End If
+
+        Dim confirm = MessageBox.Show("Are you sure you want to delete user: " & txtUsername.Text & "?", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning)
+        If confirm = DialogResult.No Then Return
+
+        Try
+            If con.State = ConnectionState.Open Then con.Close()
+            con.Open()
+            cmd = New OleDbCommand("DELETE FROM tblUsers WHERE UserID=?", con)
+            cmd.Parameters.AddWithValue("@1", selectedUserID)
+            cmd.ExecuteNonQuery()
+
+            LogActivity("Delete User", "Deleted user: " & txtUsername.Text)
+            MessageBox.Show("User deleted successfully!", "Deleted", MessageBoxButtons.OK, MessageBoxIcon.Information)
+
+            LoadData()
+            ClearFields()
+        Catch ex As Exception
+            MessageBox.Show("Error deleting user: " & ex.Message)
+        Finally
+            If con.State = ConnectionState.Open Then con.Close()
+        End Try
+    End Sub
+
+    '==========================
+    ' RESET PASSWORD
+    '==========================
+    Private Sub btnResetPassword_Click(sender As Object, e As EventArgs) Handles btnResetPassword.Click
+        If selectedUserID > 0 Then
+            Dim resetForm As New frmResetPassword(selectedUserID, txtUsername.Text)
+            If resetForm.ShowDialog() = DialogResult.OK Then
+                LogActivity("Reset Password", "Reset password for user: " & txtUsername.Text)
+                MessageBox.Show("Password reset successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            End If
+        End If
+    End Sub
+
+    '==========================
+    ' REFRESH
+    '==========================
+    Private Sub btnRefresh_Click(sender As Object, e As EventArgs) Handles btnRefresh.Click
+        Try
+            txtSearch.Clear()
+            LoadData()
+            ClearFields()
+            LogActivity("Refresh", "Refreshed user management view")
+            MessageBox.Show("User list refreshed successfully.", "Refreshed", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        Catch ex As Exception
+            MessageBox.Show("Error refreshing data: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Sub
+
+    '==========================
+    ' DATAGRID CLICK
+    '==========================
+    Private Sub DataGridView1_CellClick(sender As Object, e As DataGridViewCellEventArgs) Handles DataGridView1.CellClick
+        If e.RowIndex >= 0 Then
+            selectedUserID = Convert.ToInt32(DataGridView1.Rows(e.RowIndex).Cells("ID").Value)
+            txtUsername.Text = DataGridView1.Rows(e.RowIndex).Cells("Username").Value.ToString()
+            txtFullName.Text = DataGridView1.Rows(e.RowIndex).Cells("Full Name").Value.ToString()
+            txtEmail.Text = DataGridView1.Rows(e.RowIndex).Cells("Email").Value.ToString()
+            cmbUserRole.Text = DataGridView1.Rows(e.RowIndex).Cells("Role").Value.ToString()
+            chkIsActive.Checked = Convert.ToBoolean(DataGridView1.Rows(e.RowIndex).Cells("Active").Value)
+
+            txtUsername.Enabled = False
+            txtPassword.Enabled = False
+            txtConfirmPassword.Enabled = False
+            btnAdd.Enabled = False
+            btnUpdate.Enabled = True
+            btnDelete.Enabled = True
+            btnResetPassword.Enabled = True
+        End If
+    End Sub
+
+    '==========================
+    ' ACTIVITY LOG
+    '==========================
     Private Sub LogActivity(activityType As String, description As String)
         Try
             If con.State = ConnectionState.Open Then con.Close()
@@ -106,18 +293,4 @@ Public Class frmUserManagement
             If con.State = ConnectionState.Open Then con.Close()
         End Try
     End Sub
-
-    ' Reset password button
-    Private Sub btnResetPassword_Click(sender As Object, e As EventArgs) Handles btnResetPassword.Click
-        If selectedUserID > 0 Then
-            Dim resetForm As New frmResetPassword(selectedUserID, txtUsername.Text)
-            If resetForm.ShowDialog() = DialogResult.OK Then
-                ' Log activity here, inside frmUserManagement
-                LogActivity("Reset Password", "Reset password for user: " & txtUsername.Text)
-                MessageBox.Show("Password reset successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information)
-            End If
-        End If
-    End Sub
-
-    '... Keep all other methods (btnAdd, btnUpdate, btnDelete, DataGridView1_CellClick, btnSearch, chkShowPassword, etc.) unchanged ...
 End Class

@@ -1,6 +1,7 @@
 ﻿Imports System.Data.OleDb
 Imports System.IO
 Imports System.Runtime.InteropServices
+Imports System.Threading
 Imports ADOX  ' ✅ COM Reference: Microsoft ADO Ext. 6.0 for DDL and Security
 
 Public Module DatabaseConfig
@@ -8,6 +9,8 @@ Public Module DatabaseConfig
     ' === Centralized Connection String ===
     Public ConnectionString As String = ""
     Private isShuttingDown As Boolean = False
+    Private ReadOnly connectionLock As New Object()
+    Private activeConnections As New List(Of WeakReference)
 
     ' === Get Full Path of Database ===
     Public Function GetDatabasePath() As String
@@ -17,7 +20,9 @@ Public Module DatabaseConfig
     ' === Initialize Connection String ===
     Public Sub InitializeConnectionString()
         Dim dbPath As String = GetDatabasePath()
-        ConnectionString = $"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={dbPath};Persist Security Info=False;"
+        ' CRITICAL: Add OLE DB Services=-4 to disable connection pooling
+        ' This prevents COM objects from being reused incorrectly
+        ConnectionString = $"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={dbPath};Persist Security Info=False;OLE DB Services=-4;"
     End Sub
 
     ' === Automatically Create Database File If Missing ===

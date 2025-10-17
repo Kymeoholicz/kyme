@@ -24,58 +24,70 @@ Public Class frmInventory
     Private Sub LoadData()
         If isClosing Then Return
 
+        ' Critical: Check if controls still exist
+        If dgvInventory Is Nothing OrElse dgvInventory.IsDisposed Then Return
+
         SyncLock dataLock
-            ' Safely dispose old DataTable first
-            If currentDataTable IsNot Nothing Then
-                Try
-                    dgvInventory.DataSource = Nothing
-                    currentDataTable.Dispose()
-                    currentDataTable = Nothing
-                Catch
-                End Try
-            End If
-
-            Dim dt As New DataTable()
-
             Try
+                ' Dispose old DataTable first
+                If currentDataTable IsNot Nothing Then
+                    Try
+                        dgvInventory.DataSource = Nothing
+                        currentDataTable.Dispose()
+                        currentDataTable = Nothing
+                    Catch
+                    End Try
+                End If
+
+                ' CRITICAL: Unbind and manually populate instead of DataTable binding
+                dgvInventory.DataSource = Nothing
+                dgvInventory.Rows.Clear()
+
                 Using con As OleDbConnection = DatabaseConfig.GetConnection()
                     con.Open()
 
                     Using cmd As New OleDbCommand("SELECT ItemID, ItemName, Category, Quantity, [Condition], [Location], DateAdded FROM tblInventory ORDER BY ItemID DESC", con)
-                        Using da As New OleDbDataAdapter(cmd)
-                            da.Fill(dt)
+                        Using reader As OleDbDataReader = cmd.ExecuteReader()
+                            ' Ensure columns exist
+                            If dgvInventory.Columns.Count = 0 Then
+                                dgvInventory.Columns.Add("ItemID", "ID")
+                                dgvInventory.Columns.Add("ItemName", "Item Name")
+                                dgvInventory.Columns.Add("Category", "Category")
+                                dgvInventory.Columns.Add("Quantity", "Quantity")
+                                dgvInventory.Columns.Add("Condition", "Condition")
+                                dgvInventory.Columns.Add("Location", "Location")
+                                dgvInventory.Columns.Add("DateAdded", "Date Added")
+
+                                ' Format columns
+                                dgvInventory.Columns(0).Width = 60
+                                dgvInventory.Columns(1).Width = 150
+                                dgvInventory.Columns(2).Width = 100
+                                dgvInventory.Columns(3).Width = 80
+                                dgvInventory.Columns(4).Width = 100
+                                dgvInventory.Columns(5).Width = 150
+                                dgvInventory.Columns(6).Width = 120
+                            End If
+
+                            ' Manually add rows from reader
+                            While reader.Read() AndAlso Not isClosing
+                                dgvInventory.Rows.Add(
+                                    If(IsDBNull(reader(0)), 0, reader(0)),
+                                    If(IsDBNull(reader(1)), "", reader(1).ToString()),
+                                    If(IsDBNull(reader(2)), "", reader(2).ToString()),
+                                    If(IsDBNull(reader(3)), 0, reader(3)),
+                                    If(IsDBNull(reader(4)), "", reader(4).ToString()),
+                                    If(IsDBNull(reader(5)), "", reader(5).ToString()),
+                                    If(IsDBNull(reader(6)), DateTime.Now, reader(6))
+                                )
+                            End While
                         End Using
                     End Using
                 End Using
-
-                ' Bind data after all connections are properly disposed
-                If Not isClosing Then
-                    currentDataTable = dt
-                    dgvInventory.DataSource = currentDataTable
-
-                    ' Format columns
-                    If dgvInventory.Columns.Count > 0 Then
-                        dgvInventory.Columns(0).Width = 60
-                        dgvInventory.Columns(1).Width = 150
-                        dgvInventory.Columns(2).Width = 100
-                        dgvInventory.Columns(3).Width = 80
-                        dgvInventory.Columns(4).Width = 100
-                        dgvInventory.Columns(5).Width = 150
-                        dgvInventory.Columns(6).Width = 120
-                    End If
-                Else
-                    ' If closing, dispose immediately
-                    dt.Dispose()
-                End If
 
             Catch ex As Exception
                 If Not isClosing Then
                     MessageBox.Show("Error loading data: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 End If
-                Try
-                    dt.Dispose()
-                Catch
-                End Try
             End Try
         End SyncLock
     End Sub
@@ -188,41 +200,92 @@ Public Class frmInventory
 
         If isClosing Then Return
 
-        Dim dt As New DataTable()
+        SyncLock dataLock
+            Try
+                ' Clear DataGridView manually
+                dgvInventory.DataSource = Nothing
+                dgvInventory.Rows.Clear()
 
-        Try
-            Using con As OleDbConnection = DatabaseConfig.GetConnection()
-                con.Open()
+                Using con As OleDbConnection = DatabaseConfig.GetConnection()
+                    con.Open()
 
-                Using cmd As New OleDbCommand("SELECT * FROM tblInventory WHERE ItemName LIKE ? OR Category LIKE ? OR [Location] LIKE ?", con)
-                    Dim likeTerm As String = "%" & searchTerm & "%"
-                    cmd.Parameters.Add("@ItemName", OleDbType.VarWChar, 100).Value = likeTerm
-                    cmd.Parameters.Add("@Category", OleDbType.VarWChar, 50).Value = likeTerm
-                    cmd.Parameters.Add("@Location", OleDbType.VarWChar, 100).Value = likeTerm
+                    Using cmd As New OleDbCommand("SELECT ItemID, ItemName, Category, Quantity, [Condition], [Location], DateAdded FROM tblInventory WHERE ItemName LIKE ? OR Category LIKE ? OR [Location] LIKE ? ORDER BY ItemID DESC", con)
+                        Dim likeTerm As String = "%" & searchTerm & "%"
+                        cmd.Parameters.Add("@ItemName", OleDbType.VarWChar, 100).Value = likeTerm
+                        cmd.Parameters.Add("@Category", OleDbType.VarWChar, 50).Value = likeTerm
+                        cmd.Parameters.Add("@Location", OleDbType.VarWChar, 100).Value = likeTerm
 
-                    Using da As New OleDbDataAdapter(cmd)
-                        da.Fill(dt)
+                        Using reader As OleDbDataReader = cmd.ExecuteReader()
+                            ' Manually add rows from reader
+                            While reader.Read() AndAlso Not isClosing
+                                dgvInventory.Rows.Add(
+                                    If(IsDBNull(reader(0)), 0, reader(0)),
+                                    If(IsDBNull(reader(1)), "", reader(1).ToString()),
+                                    If(IsDBNull(reader(2)), "", reader(2).ToString()),
+                                    If(IsDBNull(reader(3)), 0, reader(3)),
+                                    If(IsDBNull(reader(4)), "", reader(4).ToString()),
+                                    If(IsDBNull(reader(5)), "", reader(5).ToString()),
+                                    If(IsDBNull(reader(6)), DateTime.Now, reader(6))
+                                )
+                            End While
+                        End Using
                     End Using
                 End Using
-            End Using
 
-            ' Bind data after all connections are properly disposed
-            If Not isClosing Then
-                dgvInventory.DataSource = dt
+            Catch ex As Exception
+                If Not isClosing Then
+                    MessageBox.Show("Error searching: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                End If
+            End Try
+        End SyncLock
+    End Sub
+
+    ' ===== Back Button =====
+    Private Sub btnBack_Click(sender As Object, e As EventArgs) Handles btnBack.Click
+        Try
+            If MessageBox.Show("Return to Main Menu?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) = DialogResult.Yes Then
+                ' Clean up before closing
+                Try
+                    SyncLock dataLock
+                        If dgvInventory IsNot Nothing AndAlso Not dgvInventory.IsDisposed Then
+                            dgvInventory.DataSource = Nothing
+                            dgvInventory.Rows.Clear()
+                        End If
+
+                        ' No DataTable to dispose anymore
+                        currentDataTable = Nothing
+                    End SyncLock
+
+                    ' Quick GC before closing
+                    GC.Collect()
+                    GC.WaitForPendingFinalizers()
+                Catch ex As Exception
+                    Debug.WriteLine($"Cleanup error in Back button: {ex.Message}")
+                End Try
+
+                ' Simply close this dialog form - returns to main menu automatically
+                Me.DialogResult = DialogResult.OK
+                Me.Close()
             End If
         Catch ex As Exception
-            If Not isClosing Then
-                MessageBox.Show("Error searching: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
-            End If
+            MessageBox.Show($"Error returning to main menu: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
 
     ' ===== DataGridView Cell Click =====
     Private Sub dgvInventory_CellClick(sender As Object, e As DataGridViewCellEventArgs) Handles dgvInventory.CellClick
+        If isClosing Then Return
         If e.RowIndex < 0 Then Return
 
         Try
+            ' Prevent access during form closing
+            If dgvInventory Is Nothing OrElse dgvInventory.IsDisposed Then Return
+
             Dim row As DataGridViewRow = dgvInventory.Rows(e.RowIndex)
+
+            ' Validate row exists and has cells
+            If row Is Nothing OrElse row.Cells.Count < 6 Then Return
+
             selectedItemID = If(row.Cells(0).Value IsNot DBNull.Value, CInt(row.Cells(0).Value), 0)
             txtItemName.Text = If(row.Cells(1).Value IsNot DBNull.Value, row.Cells(1).Value.ToString(), "")
             txtCategory.Text = If(row.Cells(2).Value IsNot DBNull.Value, row.Cells(2).Value.ToString(), "")
@@ -234,7 +297,9 @@ Public Class frmInventory
             btnUpdate.Enabled = True
             btnDelete.Enabled = True
         Catch ex As Exception
-            MessageBox.Show("Error selecting row: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            If Not isClosing Then
+                MessageBox.Show("Error selecting row: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End If
         End Try
     End Sub
 
@@ -276,123 +341,69 @@ Public Class frmInventory
 
     ' ===== Log Activity =====
     Private Sub LogActivity(activityType As String, description As String)
-        Dim con As OleDbConnection = Nothing
-        Dim logCmd As OleDbCommand = Nothing
+        If isClosing Then Return
 
         Try
-            con = DatabaseConfig.GetConnection()
-            con.Open()
+            Using con As OleDbConnection = DatabaseConfig.GetConnection()
+                con.Open()
 
-            logCmd = New OleDbCommand("INSERT INTO tblActivityLog (UserID, ActivityType, Description, ActivityDate) VALUES (?,?,?,?)", con)
-            logCmd.Parameters.Add("@UserID", OleDbType.Integer).Value = CurrentUser.UserID
-            logCmd.Parameters.Add("@ActivityType", OleDbType.VarWChar, 50).Value = activityType
-            logCmd.Parameters.Add("@Description", OleDbType.VarWChar, 255).Value = description
-            logCmd.Parameters.Add("@ActivityDate", OleDbType.Date).Value = Date.Now
-            logCmd.ExecuteNonQuery()
+                Using logCmd As New OleDbCommand("INSERT INTO tblActivityLog (UserID, ActivityType, Description, ActivityDate) VALUES (?,?,?,?)", con)
+                    logCmd.Parameters.Add("@UserID", OleDbType.Integer).Value = CurrentUser.UserID
+                    logCmd.Parameters.Add("@ActivityType", OleDbType.VarWChar, 50).Value = activityType
+                    logCmd.Parameters.Add("@Description", OleDbType.VarWChar, 255).Value = description
+                    logCmd.Parameters.Add("@ActivityDate", OleDbType.Date).Value = Date.Now
+                    logCmd.ExecuteNonQuery()
+                End Using
+            End Using
         Catch
             ' Ignore logging errors silently
-        Finally
-            If logCmd IsNot Nothing Then
-                Try
-                    logCmd.Dispose()
-                Catch
-                End Try
-            End If
-
-            If con IsNot Nothing Then
-                Try
-                    If con.State = ConnectionState.Open Then
-                        con.Close()
-                    End If
-                    con.Dispose()
-                Catch
-                End Try
-            End If
         End Try
     End Sub
 
     ' ===== Form Closing - Clean up COM objects =====
     Private Sub frmInventory_FormClosing(sender As Object, e As FormClosingEventArgs) Handles MyBase.FormClosing
-        ' Set flag FIRST to stop all operations
-        isClosing = True
-
-        ' Give any pending operations a moment to check the flag
-        Thread.Sleep(100)
-
         Try
+            ' Set flag FIRST to stop all operations
+            isClosing = True
+
+            ' Shorter delay
+            Thread.Sleep(50)
+
             ' Remove event handlers
             Try
                 RemoveHandler dgvInventory.CellClick, AddressOf dgvInventory_CellClick
             Catch
             End Try
 
-            SyncLock dataLock
-                ' Clear DataGridView completely
-                If dgvInventory IsNot Nothing Then
-                    Try
+            ' Minimal cleanup - don't touch DataGridView too much
+            Try
+                SyncLock dataLock
+                    If dgvInventory IsNot Nothing AndAlso Not dgvInventory.IsDisposed Then
                         dgvInventory.DataSource = Nothing
-                        dgvInventory.Rows.Clear()
-                        dgvInventory.Columns.Clear()
-                    Catch
-                    End Try
-                End If
+                    End If
+                    currentDataTable = Nothing
+                End SyncLock
+            Catch
+            End Try
 
-                ' Dispose tracked DataTable
-                If currentDataTable IsNot Nothing Then
-                    Try
-                        currentDataTable.Dispose()
-                        currentDataTable = Nothing
-                    Catch
-                    End Try
-                End If
-            End SyncLock
-
-            ' Force immediate COM cleanup with aggressive GC
-            Thread.Sleep(50)
-            For i As Integer = 0 To 3
-                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, True, True)
+            ' Single GC pass only
+            Try
+                GC.Collect()
                 GC.WaitForPendingFinalizers()
-                Thread.Sleep(10)
-            Next
+            Catch
+            End Try
 
         Catch ex As Exception
-            Debug.WriteLine("Cleanup error: " & ex.Message)
+            Debug.WriteLine("FormClosing error: " & ex.Message)
         End Try
-
-        ' Final delay to let COM cleanup complete
-        Thread.Sleep(100)
     End Sub
 
     ' ===== Form Closed - Final cleanup =====
     Private Sub frmInventory_FormClosed(sender As Object, e As FormClosedEventArgs) Handles MyBase.FormClosed
+        ' Minimal cleanup - let the system handle it
         Try
-            Thread.Sleep(50)
-
-            ' Final disposal
-            SyncLock dataLock
-                If dgvInventory IsNot Nothing Then
-                    Try
-                        dgvInventory.Dispose()
-                        dgvInventory = Nothing
-                    Catch
-                    End Try
-                End If
-            End SyncLock
-
-            ' Ultra-aggressive final GC
-            For i As Integer = 0 To 4
-                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, True, True)
-                GC.WaitForPendingFinalizers()
-                Thread.Sleep(10)
-            Next
-
-            ' Suppress finalization
             GC.SuppressFinalize(Me)
-
-            ' Final delay for COM cleanup
-            Thread.Sleep(100)
         Catch
-            ' Ignore all errors
         End Try
     End Sub
 
